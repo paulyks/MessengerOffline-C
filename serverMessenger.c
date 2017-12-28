@@ -45,7 +45,6 @@ void finish_with_error(MYSQL *con)
 }
 void query(MYSQL* con,char* text)
 {
-	printf("%s\n",text);fflush(stdout);
 	if(mysql_query(con,text))
 		finish_with_error(con);
 }
@@ -76,8 +75,6 @@ void registerAcc(char* text,struct accounts *accounts,MYSQL *con)
 	char* string = malloc(strlen(name)+strlen(password)+256);
 	sprintf(string,"%s,'%d-%d-%d'","INSERT INTO users VALUES(0",tm.tm_year+1900,tm.tm_mon+1,tm.tm_mday);
 	sprintf(string,"%s,'%s','%s',%d,%d)",string,name,password,1,0);
-	printf("%s",string);
-	fflush(stdout);
 	query(con,string);
 }
 int loginAcc(MYSQL *con,char* buffer)
@@ -119,7 +116,6 @@ int isOnline(MYSQL *con,char *buffer)
 	strcpy(text,buffer);
 	name = strtok(text,":");
 	sprintf(string,"SELECT Status FROM users WHERE Name = '%s'",name);
-	printf("%s\n",string);fflush(stdout);
 	query(con,string);
 	MYSQL_RES *result = mysql_store_result(con);
 	if(result == NULL)
@@ -163,7 +159,7 @@ void wAccesingOnlineAccount(char*buffer,int nfds)
 }
 void sendMessageToUser(int senderID,int userID,char* buffer)
 {
-	int userOnline = 0,opt = 103,i;
+	int userOnline = 0,opt = 103,i,userOnlineInChat = 0;;
 	buffer[strlen(buffer)-1] = '\0';
 	fflush(stdout);
 	for(i=0;i <= nfds; i++)
@@ -176,6 +172,7 @@ void sendMessageToUser(int senderID,int userID,char* buffer)
 			opt = strlen(buffer);
 			write(accounts[i].fd,&opt,sizeof(opt));
 			write(accounts[i].fd,buffer,opt);
+			read(accounts[i].fd,&userOnlineInChat,sizeof(userOnlineInChat));
 			break;
 		}
 	}
@@ -184,7 +181,7 @@ void sendMessageToUser(int senderID,int userID,char* buffer)
 	time_t t = time(NULL);
 	struct tm tm = *localtime(&t);
 	char *txt = malloc(opt + 300);
-	if(userOnline == 1)
+	if(userOnline == 1 && userOnlineInChat == 1)
 		sprintf(txt,"INSERT INTO message VALUES(0,%d,%d,'%d-%d-%d',1,'%s')",senderID,userID,tm.tm_year+1900,tm.tm_mon+1,tm.tm_mday,buffer);
 	else
 		sprintf(txt,"INSERT INTO message VALUES(0,%d,%d,'%d-%d-%d',0,'%s')",senderID,userID,tm.tm_year+1900,tm.tm_mon+1,tm.tm_mday,buffer);
@@ -194,8 +191,6 @@ int exitFromChatOccured(char* txt)
 {
 	txt = strtok(txt,":");
 	txt = strtok(NULL,"\n");
-	printf("|..%s..|",txt);
-	fflush(stdout);
 	if(txt[0] == '0')
 		return 1;
 	return 0;
@@ -212,7 +207,6 @@ void chatWithHasLeftConversation(int userID)
 }
 void sendMessageToLobby(char* buf,char* buf2,char* thrdBuf)
 {
-	printf("%s",thrdBuf);fflush(stdout);
 	char* text,*text2,*text3;
 	MYSQL_RES *result;
 	MYSQL_ROW row;
@@ -279,7 +273,6 @@ int main ()
 	int sd,client;
 	int option,bufferSize;
 	struct thData thD;
-	
 	bzero(accounts,sizeof(accounts));
 	printf("Program %d started.\n",getpid());
 	fflush(stdout);
@@ -325,7 +318,7 @@ int main ()
     tv.tv_usec = 0;
     nfds = sd;
     int len,fd;
-    printf("[SERVER] Waiting connections at port %d...\n",PORT);
+    printf("[SERVER] Messenger by Paul is up an ready for connections at port %d.\n",PORT);
     fflush(stdout);
     pthread_t th;
     while(1)
@@ -349,7 +342,6 @@ int main ()
     		if(nfds < client)
     			nfds = client;
     		FD_SET(client,&actfds);
-    		printf("[SERVER] A new connection(%d) has been established.\n",client);
     		fflush(stdout);
     	}
     	for(fd = 0; fd <= nfds; fd++)
@@ -358,8 +350,6 @@ int main ()
     		{
     			bzero(&option,sizeof(option));
     			read(fd,&option,sizeof(option));
-    			printf("R(%d): ",option);
-    			fflush(stdout);
     			switch(option)
     			{
     				case -1:
@@ -391,8 +381,6 @@ int main ()
 							}
 							disconnect(con,buffer);
 						}
-						printf("[SERVER] Connection with %d has been terminated.\n");
-						fflush(stdout);
 						bzero(&accounts[fd],sizeof(accounts[fd]));
 						close(fd);
 						break;
@@ -437,14 +425,11 @@ static void* writeToClient(void* arg)
 			fflush(stdout);
 			if(accountExist(con,buffer) != 0)
 			{
-				fflush(stdout);
 				thD.option = 5;
 				write(thD.fd,&thD.option,sizeof(thD.option));
 			}
 			else
 			{
-				printf("%s doesn't exist in database.\n",buffer);
-				fflush(stdout);
 				thD.option = 7;
 				write(thD.fd,&thD.option,sizeof(thD.option));
 			}
@@ -457,8 +442,6 @@ static void* writeToClient(void* arg)
 			buffer[bufferSize] = '\0';
 			if(accountExist(con,buffer) != 0)
 			{
-				printf("Contul %s deja exista.\n",buffer);
-				fflush(stdout);
 				thD.option = 2;
 				write(thD.fd,&thD.option,sizeof(thD.option));
 			}
@@ -559,9 +542,6 @@ static void* writeToClient(void* arg)
 			write(thD.fd,&id2,sizeof(id2));
 			//sending messages
 			text = malloc(300);
-			sprintf(text,"UPDATE message SET Seen = 1 WHERE Seen = 0 AND `From` = %d AND `To` = %d",id2,id1);
-			query(con,text);
-			text = malloc(300);
 			sprintf(text,"SELECT `From`,`To`,Date,Seen,Message FROM message WHERE (`From` = %d AND `To` = %d) OR (`From` = %d AND `To` = %d) ORDER BY ID DESC",id1,id2,id2,id1);
 			query(con,text);
 			result = mysql_store_result(con);
@@ -569,7 +549,7 @@ static void* writeToClient(void* arg)
 				finish_with_error(con);
 			index = 0;
 			text3 = malloc(50);
-			sprintf(text3,">Enter 0 to exit from this conversation.");
+			sprintf(text3,">\x1B[31mEnter 0 to exit from this conversation.\x1B[0m");
 			while((row = mysql_fetch_row(result)) && index < 10)
 			{
 				text = malloc(strlen(row[4])+strlen(buffer)+strlen(buffer2));
@@ -579,14 +559,22 @@ static void* writeToClient(void* arg)
 					sprintf(text,"%s:%s",buffer,row[4]);
 				text2 = malloc(strlen(text) + strlen(text3)+5);
 				sprintf(text2,"%s\n%s",text,text3);
-				text3 = malloc(strlen(text2)+2);
-				strcpy(text3,text2);
+				text3 = malloc(strlen(text2)+30);
 				if(atoi(row[3]) == 1)
+				{
+					sprintf(text3,"\033[37m%s",text2);
 					index++;
+				}
+				else
+					sprintf(text3,"\033[0m%s",text2);
+		
 			}
 			bufferSize = strlen(text3);
 			write(thD.fd,&bufferSize,sizeof(bufferSize));
 			write(thD.fd,text3,bufferSize);
+			text = malloc(300);
+			sprintf(text,"UPDATE message SET Seen = 1 WHERE Seen = 0 AND `From` = %d AND `To` = %d",id2,id1);
+			query(con,text);
 			break;
 		case 5: //receive message
 			read(thD.fd,&id1,sizeof(id1));
@@ -595,7 +583,6 @@ static void* writeToClient(void* arg)
 			buffer = malloc(bufferSize);
 			read(thD.fd,buffer,bufferSize);
 			buffer[bufferSize] = '\0';
-			printf(".%s.",buffer);fflush(stdout);
 			buffer2 = malloc(strlen(buffer));
 			strcpy(buffer2,buffer);
 			if(exitFromChatOccured(buffer2))
@@ -628,8 +615,6 @@ static void* writeToClient(void* arg)
 			{
 				if(loginAcc(con,buffer) != 0)
 				{
-					printf("%s has been loged.\n",buffer);
-					fflush(stdout);
 					bzero(&accounts[thD.fd],sizeof(accounts[thD.fd]));
 					populateAccounts(con,thD.fd,buffer);
 					thD.option = 4;
@@ -637,8 +622,6 @@ static void* writeToClient(void* arg)
 				}
 				else
 				{
-					printf("%s hasn't been loged.\n",buffer);
-					fflush(stdout);
 					thD.option = 6;
 					write(thD.fd,&thD.option,sizeof(thD.option));
 				}

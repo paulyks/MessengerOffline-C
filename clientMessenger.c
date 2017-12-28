@@ -10,10 +10,20 @@
 #include <string.h>
 #include <signal.h>
 #include <pthread.h>
+#include <pa_linux_alsa.h>
+#include <alsa/asoundlib.h>
+#define RED   "\x1B[31m"
+#define GRN   "\x1B[32m"
+#define YEL   "\x1B[33m"
+#define BLU   "\x1B[34m"
+#define MAG   "\x1B[35m"
+#define CYN   "\x1B[36m"
+#define WHT   "\x1B[37m"
+char *RESET;
 #define clearScreen() printf("\033[H\033[J");fflush(stdout)
 extern int errno;
 int sd,isChatRoomProtected;
-int port;
+int port,SFXsound = 1;
 int writeFlag = 0,option=-1,bufferSize,readFlag = 0,newMessage = 0,checkID,isInChatRoom = 0;
 char *buffer,*buffer2,*username,*chatWith;
 int myID=-1,chatWithID=-1,isOnline = 0;
@@ -21,7 +31,6 @@ size_t sizeT = 500;
 void onCtrlC(int sig)
 {
   clearScreen();
-  printf("\a");
   int option = -1;
   write(sd,&option,sizeof(option));
   bufferSize = strlen(username);
@@ -41,7 +50,7 @@ void onCtrlC(int sig)
     printf("Have a nice day, %s!\n",username);
     fflush(stdout);
   }
-  printf("***Connection with Messenger by Paul has been finised.****\n");
+  printf("%s***Connection with Messenger by Paul has been finised.****\n%s",GRN,RESET);
   fflush(stdout);
   close(sd);
   exit(sd);
@@ -71,9 +80,10 @@ void actualizateNewMessages()
 }
 int main (int argc, char *argv[])
 {
+  RESET = malloc(50);
+  strcpy(RESET,"\x1B[37m");
+  clearScreen();
   char *recvMessage;
-  printf("Clientul %d a pornit.\n",getpid());
-  fflush(stdout);
   signal(SIGINT,onCtrlC);
   struct sockaddr_in server;
   fd_set readfds;
@@ -99,9 +109,9 @@ int main (int argc, char *argv[])
     perror("Connect error!\n");
     return errno;
   }
-  printf("Welcome to Messenger!\n");
+  printf("%sWelcome to Messenger!\n%s",BLU,RESET);
   fflush(stdout);
-  printf("[0]Login.\n[1]Register.\n");
+  printf("[%s0%s]Login.\n[%s1%s]Register.\n",RED,RESET,RED,RESET);
   FD_ZERO(&actfds);
   FD_SET(sd,&actfds);
   tv.tv_sec = 1;
@@ -123,16 +133,21 @@ int main (int argc, char *argv[])
         switch(option)
         {
           case 100: //wAccesingOnlineAccount
-            printf("***Your account was accesed from another location!***\n");
+            printf("%s***Your account was accesed from another location!***\n%s",RED,RESET);
             fflush(stdout);
+            if(SFXsound)
+            {
+              printf("\a");
+              fflush(stdout);
+            }
             break;
           case 101:
-            printf(">%s is already in your friend list.\n",chatWith);
+            printf(">%s%s is already in your friend list.\n%s",YEL,chatWith,RESET);
             fflush(stdout);
             option = 9;
             break;
           case 102:
-            printf(">%s was added in your friend list.\n",chatWith);
+            printf(">%s%s was added in your friend list.\n%s",GRN,chatWith,RESET);
             option = 4;
             break;
           case 103: //receive message
@@ -144,23 +159,37 @@ int main (int argc, char *argv[])
             recvMessage[bufferSize] = '\0';
             if(checkID == chatWithID)
             {
-              printf("%s\n");
+              checkID = 1;
+              write(sd,&checkID,sizeof(checkID));
+              printf("%s\n",recvMessage);
               fflush(stdout);
             }
             else
             {
+              checkID = 0;
+              write(sd,&checkID,sizeof(checkID));
               recvMessage = strtok(recvMessage,":");
-              printf("***You have a new message from %s.***\n",recvMessage);
+              printf("%s***You have a new message from %s.***\n%s",WHT,recvMessage,RESET);
               newMessage++;
               fflush(stdout);
+              if(SFXsound)
+              {
+                printf("\a");
+                fflush(stdout);
+              }
             }
             free(recvMessage);
             break;
           case 104:
             if(chatWithID != -1)
             {
-              printf(">%s has left conversation.\n",chatWith);
+              printf(">%s%s has left conversation.\n%s",WHT,chatWith,RESET);
               fflush(stdout);
+              if(SFXsound)
+              {
+                printf("\a");
+                fflush(stdout);
+              }
             }
             break;
           case 105: //is not your friend to remove it
@@ -168,7 +197,7 @@ int main (int argc, char *argv[])
             recvMessage = malloc(bufferSize);
             read(sd,recvMessage,bufferSize);
             recvMessage[bufferSize] = '\0';
-            printf("%s is not in your friend list.\n",recvMessage);
+            printf("%s%s is not in your friend list.\n%s",YEL,recvMessage,RESET);
             fflush(stdout);
             break;
           case 106:
@@ -176,11 +205,11 @@ int main (int argc, char *argv[])
             recvMessage = malloc(bufferSize);
             read(sd,recvMessage,bufferSize);
             recvMessage[bufferSize] = '\0';
-            printf("%s is not your friend anymore.\n",recvMessage);
+            printf("%s%s is not your friend anymore.\n%s",RED,recvMessage,RESET);
             fflush(stdout);
             break;
           case 107:
-            printf("Already exists a chatroom with name %s.",chatWith);
+            printf("%sAlready exists a chatroom with name %s.%s",YEL,chatWith,RESET);
             option = 18;
             break;
           case 108://receive message from lobby
@@ -190,6 +219,11 @@ int main (int argc, char *argv[])
             recvMessage[bufferSize] = '\0';
             printf("%s",recvMessage);
             fflush(stdout);
+            if(SFXsound)
+            {
+              printf("\a");
+              fflush(stdout);
+            }
             break;
         }
       }
@@ -275,7 +309,7 @@ static void *writeToServer(void *arg)
           clearScreen();
           printf(">Register on Messenger Platform by Paul.\n");
           fflush(stdout);
-          printf("%s is too short for an username.\n",buffer);
+          printf("%s%s is too short for an username.\n%s",RED,buffer,RESET);
           fflush(stdout);
         }
       }
@@ -284,12 +318,12 @@ static void *writeToServer(void *arg)
         clearScreen();
         printf(">Register on Messenger Platform by Paul.\n");
         fflush(stdout);
-        printf("An username can contain only alphabet symbols and numbers.\n");
+        printf("%sAn username can contain only alphabet symbols and numbers.%s\n",RED,RESET);
         fflush(stdout);
       }
       break;
     case 2://error register
-      printf("%s already exist in database.\n",buffer);
+      printf("%s%s already exist in database.%s\n",RED,buffer,RESET);
       option = 1;
       break;
     case 3:
@@ -315,7 +349,7 @@ static void *writeToServer(void *arg)
       else
       {
         option = 3;
-        printf("Your password is too weak.\n");
+        printf("%sYour password is too weak.\n%s",RED,RESET);
         fflush(stdout);
       }
       break;//request password
@@ -327,12 +361,16 @@ static void *writeToServer(void *arg)
       clearScreen();
       printf(">Messenger by Paul\n");
       printf("----You: %s----\n",username);
-      printf("|[1]----View friends----|\n");
-      printf("|[2]----View online users----|\n");
-      printf("|[3]----View all users----|\n");
-      printf("|[4]----Search users by name----|\n");
-      printf("|[5]----Check inbox(%d new messages)----|\n",newMessage);
-      printf("|[6]----Chatrooms----|\n");
+      printf("|[%s1%s]----View friends----|\n",RED,RESET);
+      printf("|[%s2%s]----View online users----|\n",RED,RESET);
+      printf("|[%s3%s]----View all users----|\n",RED,RESET);
+      printf("|[%s4%s]----Search users by name----|\n",RED,RESET);
+      if(newMessage)
+        printf("|[%s5%s]----Check inbox(%s%d%s new messages)----|\n",RED,RESET,GRN,newMessage,RESET);
+      else
+        printf("|[%s5%s]----Check inbox(%s%d%s new messages)----|\n",RED,RESET,RED,newMessage,RESET);
+      printf("|[%s6%s]----Chatrooms----|\n",RED,RESET);
+      printf("|[%s7%s]----Settings----|\n",RED,RESET);
       fflush(stdout);
       buffer = malloc(1);
       scanf("%s",buffer);
@@ -344,6 +382,7 @@ static void *writeToServer(void *arg)
         case '4':option=14;break;
         case '5':option=15;break;
         case '6':option=16;break;
+        case '7':option=28;break;
         default:option=4;break;
       }
       clearScreen();
@@ -376,24 +415,24 @@ static void *writeToServer(void *arg)
       clearScreen();
       printf(">Login into Messenger by Paul.\n");
       fflush(stdout);
-      printf("***Incorrect password, try again.***\n");
+      printf("%s***Incorrect password, try again.***\n%s",RED,RESET);
       fflush(stdout);
       printf("Username:%s\n",username);
       fflush(stdout);
       break;//incorrect password
-    case 7:
+    case 7://error login
       option = 0;
       clearScreen();
       printf(">Login into Messenger by Paul.\n");
       fflush(stdout);
-      printf("***This username doesn't exist in database.***\n");
+      printf("%s***This username doesn't exist in database.***%s\n",RED,RESET);
       fflush(stdout);
       break;//error login
-    case 8:
+    case 8://error login2
       clearScreen();
       printf(">Login into Messenger by Paul.\n");
       fflush(stdout);
-      printf("***%s is already online. Are you sure this is your account?***\n",username);
+      printf("%s***%s is already online. Are you sure this is your account?***%s\n",RED,username,RESET);
       fflush(stdout);
       option = 0;
       break;//error login2
@@ -403,11 +442,11 @@ static void *writeToServer(void *arg)
       fflush(stdout);
       printf("----You: %s----\n",username);
       fflush(stdout);
-      printf(">>[1] Open chat with %s.\n",chatWith);
+      printf(">>[%s1%s] Open chat with %s.\n",RED,RESET,chatWith);
       fflush(stdout);
-      printf(">>[2] Add %s in your friend list.\n",chatWith);
+      printf(">>[%s2%s] Add %s in your friend list.\n",RED,RESET,chatWith);
       fflush(stdout);
-      printf(">>[3] Remove %s from your friend list.\n",chatWith);
+      printf(">>[%s3%s] Remove %s from your friend list.\n",RED,RESET,chatWith);
       fflush(stdout);
       printf("[0] Back\n");
       fflush(stdout);
@@ -466,13 +505,12 @@ static void *writeToServer(void *arg)
           break;
         }
       break; 
-    case 10:
+    case 10: //sendMessage
       fflush(stdout);
       bzero(&buffer2,sizeof(buffer2));
       bzero(&buffer,sizeof(buffer));
       buffer2 = malloc(500);
       getline(&buffer2,&sizeT,stdin);
-      option = 10;
       if(buffer2[0] != '\n')
       {
         buffer = malloc(strlen(username) + strlen(buffer2) + 5);
@@ -509,30 +547,30 @@ static void *writeToServer(void *arg)
       if(bufferSize > 4)
       {
         buffer = strtok(buffer,",");
-        printf(">[%d]%s",i++,buffer);
+        printf(">[%s%d%s]%s",RED,i++,RESET,buffer);
         buffer = strtok(NULL,",");
         if(buffer[0] == '0')
-          printf("(OFF)\n");
+          printf("[%sOFF%s]\n",RED,RESET);
         else
-          printf("(ON)\n");
+          printf("[%sON%s]\n",GRN,RESET);
         fflush(stdout);
         buffer = strtok(NULL,",");
         while(buffer)
         {
-          printf(">[%d]%s",i++,buffer);
+          printf(">[%s%d%s]%s",RED,i++,RESET,buffer);
           fflush(stdout);
           buffer = strtok(NULL,",");
           if(buffer[0] == '0')
-            printf("(OFF)\n");
+            printf("[%sOFF%s]\n",RED,RESET);
           else
-            printf("(ON)\n");
+            printf("[%sON%s]\n",GRN,RESET);
           fflush(stdout);
           buffer = strtok(NULL,",");
         }
       }
       else
       {
-        printf("Your friend list is empty.\n");
+        printf("%sYour friend list is empty.%s\n",RED,RESET);
         fflush(stdout);
       }
       printf("[0]Back\n");
@@ -579,7 +617,7 @@ static void *writeToServer(void *arg)
       {
          if(strcmp(username,buffer) != 0)
          {
-          printf(">[%d]%s\n",i++,buffer);
+          printf(">[%s%d%s]%s\n",RED,i++,RESET,buffer);
           fflush(stdout);
         }
         buffer = strtok(NULL,",");
@@ -587,7 +625,7 @@ static void *writeToServer(void *arg)
         {
           if(strcmp(username,buffer) != 0)
           {
-            printf(">[%d]%s\n",i++,buffer);
+            printf(">[%s%d%s]%s\n",RED,i++,RESET,buffer);
             fflush(stdout);
           }
           buffer = strtok(NULL,",");
@@ -595,7 +633,7 @@ static void *writeToServer(void *arg)
       }
       if(i == 1)
       {
-        printf("There are no users online.\n");
+        printf("%sThere are no users online.%s\n",RED,RESET);
         fflush(stdout);
       }
       printf("[0]Back\n");
@@ -645,30 +683,30 @@ static void *writeToServer(void *arg)
       if(bufferSize > 4)
       {
         buffer = strtok(buffer,",");
-        printf(">[%d]%s",i++,buffer);
+        printf(">[%s%d%s]%s",RED,i++,RESET,buffer);
         buffer = strtok(NULL,",");
         if(buffer[0] == '0')
-          printf("(OFF)\n");
+          printf("[%sOFF%s]\n",RED,RESET);
         else
-          printf("(ON)\n");
+          printf("[%sON%s]\n",GRN,RESET);
         fflush(stdout);
         buffer = strtok(NULL,",");
         while(buffer)
         {
-          printf(">[%d]%s",i++,buffer);
+          printf(">[%s%d%s]%s",RED,i++,RESET,buffer);
           fflush(stdout);
           buffer = strtok(NULL,",");
           if(buffer[0] == '0')
-            printf("(OFF)\n");
+            printf("[%sOFF%s]\n",RED,RESET);
           else
-            printf("(ON)\n");
+            printf("[%sON%s]\n",GRN,RESET);
           fflush(stdout);
           buffer = strtok(NULL,",");
         }
       }
       else
       {
-        printf("There are no users except you.\n");
+        printf("%sThere are no users except you.%s\n",RED,RESET);
         fflush(stdout);
       }
       printf("[0]Back\n");
@@ -722,30 +760,30 @@ static void *writeToServer(void *arg)
         if(bufferSize > 4)
         {
           buffer = strtok(buffer,",");
-          printf(">[%d]%s",i++,buffer);
+          printf(">[%s%d%s]%s",RED,i++,RESET,buffer);
           buffer = strtok(NULL,",");
           if(buffer[0] == '0')
-            printf("(OFF)\n");
+            printf("[%sOFF%s]\n",RED,RESET);
           else
-            printf("(ON)\n");
+            printf("[%sON%s]\n",GRN,RESET);
           fflush(stdout);
           buffer = strtok(NULL,",");
           while(buffer)
           {
-            printf(">[%d]%s",i++,buffer);
+            printf(">[%s%d%s]%s",RED,i++,RESET,buffer);
             fflush(stdout);
             buffer = strtok(NULL,",");
             if(buffer[0] == '0')
-              printf("(OFF)\n");
+              printf("[%sOFF%s]\n",RED,RESET);
             else
-              printf("(ON)\n");
+              printf("[%sON%s]\n",GRN,RESET);
             fflush(stdout);
             buffer = strtok(NULL,",");
           }
         }
         else
         {
-          printf("There are no users to list.\n");
+          printf("%sThere are no users to list.%s\n",RED,RESET);
           fflush(stdout);
         }
         printf("[0]Back\n");
@@ -793,20 +831,20 @@ static void *writeToServer(void *arg)
       {
         buffer = strtok(buffer,",");
         text = strtok(NULL,",");
-        printf(">[%d]%s(%s)\n",i++,buffer,text);
+        printf(">[%s%d%s]%s(%s)\n",RED,i++,RESET,buffer,text);
         fflush(stdout);
         buffer = strtok(NULL,",");
         while(buffer)
         {
           text = strtok(NULL,",");
-          printf(">[%d]%s(%s)\n",i++,buffer,text);
+          printf(">[%s%d%s]%s(%s)\n",RED,i++,RESET,buffer,text);
           fflush(stdout);
           buffer = strtok(NULL,",");
         }
       }
       else
       {
-        printf("There are no new messages.\n");
+        printf("%sThere are no new messages.%s\n",RED,RESET);
         fflush(stdout);
       }
       printf("[0]Back\n");
@@ -837,9 +875,9 @@ static void *writeToServer(void *arg)
       printf(">Messenger by Paul.\n");
       fflush(stdout);
       printf("----You: %s----\n",username);
-      printf(">[1] Show all chatrooms.\n");
-      printf(">[2] Create chatroom.\n");
-      printf(">[3] Search chatroom by name.\n");
+      printf(">[%s1%s] Show all chatrooms.\n",RED,RESET);
+      printf(">[%s2%s] Create chatroom.\n",RED,RESET);
+      printf(">[%s3%s] Search chatroom by name.\n",RED,RESET);
       printf("[0] Back\n");
       fflush(stdout);
       buffer = malloc(500);
@@ -871,11 +909,11 @@ static void *writeToServer(void *arg)
       if(bufferSize > 3)
       {
         buffer = strtok(buffer,",");
-        printf(">[%d]%s",i++,buffer);
+        printf(">[%s%d%s]%s",RED,i++,RESET,buffer);
         buffer = strtok(NULL,",");
         if(buffer[0] != '0')
         {
-          printf("*");
+          printf("%s*%s",RED,RESET);
           fflush(stdout);
         }
         printf("\n");
@@ -883,12 +921,12 @@ static void *writeToServer(void *arg)
         buffer = strtok(NULL,",");
         while(buffer)
         {
-          printf(">[%d]%s",i++,buffer);
+          printf(">[%s%d%s]%s",RED,i++,RESET,buffer);
           fflush(stdout);
           buffer = strtok(NULL,",");
           if(buffer[0] != '0')
           {
-            printf("*");
+            printf("%s*%s",RED,RESET);
             fflush(stdout);
           }
           printf("\n");
@@ -898,7 +936,7 @@ static void *writeToServer(void *arg)
       }
       else
       {
-        printf("There are no chat rooms online.\n");
+        printf("%sThere are no chat rooms online.%s\n",RED,RESET);
         fflush(stdout);
       }
       printf("[0] Back\n");
@@ -978,11 +1016,11 @@ static void *writeToServer(void *arg)
         if(bufferSize > 1)
         {
           buffer = strtok(buffer,",");
-          printf(">[%d]%s",i++,buffer);
+          printf(">[%s%d%s]%s",RED,i++,RESET,buffer);
           buffer = strtok(NULL,",");
           if(buffer[0] != '0')
           {
-            printf("*");
+            printf("%s*%s",RED,RESET);
             fflush(stdout);
           }
           printf("\n");
@@ -990,12 +1028,12 @@ static void *writeToServer(void *arg)
           buffer = strtok(NULL,",");
           while(buffer)
           {
-            printf(">[%d]%s",i++,buffer);
+            printf(">[%s%d%s]%s",RED,i++,RESET,buffer);
             fflush(stdout);
             buffer = strtok(NULL,",");
             if(buffer[0] != '0')
             {
-              printf("*");
+              printf("%s*%s",RED,RESET);
               fflush(stdout);
             }
             printf("\n");
@@ -1005,7 +1043,7 @@ static void *writeToServer(void *arg)
         }
         else
         {
-          printf("There are no chat rooms online.\n");
+          printf("%sThere are no chat rooms online.%s\n",RED,RESET);
           fflush(stdout);
         }
         printf("[0] Back\n");
@@ -1041,8 +1079,8 @@ static void *writeToServer(void *arg)
       printf(">Messenger by Paul.\n");
       fflush(stdout);
       printf("----You: %s----\n",username);
-      printf(">[1] Enter in chatroom %s.\n",chatWith);
-      printf(">[2] See who is in chatroom %s.\n",chatWith);
+      printf(">[%s1%s] Enter in chatroom %s.\n",RED,RESET,chatWith);
+      printf(">[%s2%s] See who is in chatroom %s.\n",RED,RESET,chatWith);
       printf("[0] Back\n");
       fflush(stdout);
       buffer = malloc(50);
@@ -1090,13 +1128,13 @@ static void *writeToServer(void *arg)
       buffer = strtok(buffer,",");
       printf(">Messenger by Paul.\n");
       fflush(stdout);
-      printf("----You: %s----\nChatroom:%s\n>Online users\n",username,chatWith);
+      printf("----You: %s----\nChatroom:%s\n>%sOnline users%s\n",username,chatWith,GRN,RESET);
       fflush(stdout);
       if(buffer)
       {
          if(strcmp(username,buffer) != 0)
          {
-          printf(">[%d]%s\n",i++,buffer);
+          printf(">[%s%d%s]%s\n",RED,i++,RESET,buffer);
           fflush(stdout);
         }
         buffer = strtok(NULL,",");
@@ -1104,7 +1142,7 @@ static void *writeToServer(void *arg)
         {
           if(strcmp(username,buffer) != 0)
           {
-            printf(">[%d]%s\n",i++,buffer);
+            printf(">[%s%d%s]%s\n",RED,i++,RESET,buffer);
             fflush(stdout);
           }
           buffer = strtok(NULL,",");
@@ -1112,7 +1150,7 @@ static void *writeToServer(void *arg)
       }
       if(i == 1)
       {
-        printf("There are no users online in %s.\n",chatWith);
+        printf("%sThere are no users online in %s.%s\n",RED,chatWith,RESET);
         fflush(stdout);
       }
       printf("[0]Back\n");
@@ -1149,7 +1187,7 @@ static void *writeToServer(void *arg)
       fflush(stdout);
       printf("Chatroom name:%s\n",chatWith);
       fflush(stdout);
-      printf("Chatroom password(use 0 for no password):");
+      printf("Chatroom password%s(use 0 for no password)%s:",RED,RESET);
       fflush(stdout);
       buffer = malloc(500);
       getline(&buffer,&sizeT,stdin);
@@ -1176,7 +1214,7 @@ static void *writeToServer(void *arg)
       fflush(stdout);
       printf("----You: %s----\n",username);
       fflush(stdout);
-      printf("Chatroom name:%s\n>Use 0 to exit from chatroom.\n",chatWith);
+      printf("Chatroom name:%s\n>%sUse 0 to exit from chatroom.%s\n",chatWith,RED,RESET);
       fflush(stdout);
       option = 25;
       break;
@@ -1239,7 +1277,7 @@ static void *writeToServer(void *arg)
       clearScreen();
       printf(">Messenger by Paul.\n");
       fflush(stdout);
-      printf("----You: %s----\n>Use 0 to get back.\n",username);
+      printf("----You: %s----\n>%sUse 0 to get back.%s\n",username,RED,RESET);
       fflush(stdout);
       printf("Chatroom name:%s\nPassword:",chatWith);
       fflush(stdout);
@@ -1271,9 +1309,9 @@ static void *writeToServer(void *arg)
       clearScreen();
       printf(">Messenger by Paul.\n");
       fflush(stdout);
-      printf("----You: %s----\n>Use 0 to get back.\n",username);
+      printf("----You: %s----\n>%sUse 0 to get back.%s\n",username,RED,RESET);
       fflush(stdout);
-      printf("Chatroom name:%s\n%s is not the right password.\nTry again:",chatWith,buffer);
+      printf("Chatroom name:%s\n%s%s is not the right password.%s\nTry again:",chatWith,RED,RESET,buffer);
       fflush(stdout);
       buffer = malloc(500);
       getline(&buffer,&sizeT,stdin);
@@ -1299,8 +1337,79 @@ static void *writeToServer(void *arg)
           option = 17;
       }
       break;
+    case 28://settings
+      clearScreen();
+      printf(">Messenger by Paul\n");
+      printf("----You: %s----\n",username);
+      printf("*****Settings*****\n");
+      printf(">[%s1%s]SFX Sounds",RED,RESET);fflush(stdout);
+      if(SFXsound)
+        printf("[%sON%s]\n",GRN,RESET);
+      else
+        printf("[%sOFF%s]\n",RED,RESET);
+      printf(">[%s2%s]Color\n",RED,RESET);
+      printf(">[0]Back\n");
+      fflush(stdout);
+      buffer = malloc(500);
+      getline(&buffer,&sizeT,stdin);
+      if(buffer[0] != '\n')
+      {
+        switch(atoi(buffer))
+        {
+          case 1:option=29;break;
+          case 2:option=30;break;
+          default:option=4;break;
+        }
+      }
+      break;
+    case 29://SFX Sound
+      clearScreen();
+      printf(">Messenger by Paul\n");
+      printf("----You: %s----\n",username);
+      printf("*****Settings*****\n");
+      printf(">[%s1%s]ON\n>[%s2%s]OFF\n[0]Back\n",RED,RESET,RED,RESET);fflush(stdout);
+      buffer = malloc(500);
+      getline(&buffer,&sizeT,stdin);
+      if(buffer[0] != '\n')
+        switch(atoi(buffer))
+        {
+          case 1:SFXsound = 1;option=28;break;
+          case 2:SFXsound = 0;option=28;break;
+          default:option=28;break;
+        }
+      break;
+    case 30://color
+      clearScreen();
+      printf("%s>Messenger by Paul\n",RESET);
+      printf("----You: %s----\n",username);
+      printf("[%s1%s]Red\n",RED,RESET);
+      printf("[%s2%s]Green\n",RED,RESET);
+      printf("[%s3%s]Yellow\n",RED,RESET);
+      printf("[%s4%s]Blue\n",RED,RESET);
+      printf("[%s5%s]Magenta\n",RED,RESET);
+      printf("[%s6%s]Cyan\n",RED,RESET);
+      printf("[%s7%s]Grey\n",RED,RESET);
+      printf("[%s8%s]Default\n",RED,RESET);
+      printf("[0]Back\n");
+      fflush(stdout);
+      buffer = malloc(500);
+      getline(&buffer,&sizeT,stdin);
+      if(buffer[0] != '\n');
+        switch(atoi(buffer))
+        {
+          case 1: strcpy(RESET,"\033[31m");break;
+          case 2: strcpy(RESET,"\033[32m");break;
+          case 3: strcpy(RESET,"\033[33m");break;
+          case 4: strcpy(RESET,"\033[34m");break;
+          case 5: strcpy(RESET,"\033[35m");break;
+          case 6: strcpy(RESET,"\033[36m");break;
+          case 7: strcpy(RESET,"\033[37m");break;
+          case 8: strcpy(RESET,"\033[0m");break;
+          default:option=29;break;
+        }
+
+      break;
   }
-  
   writeFlag = 0;
   return(NULL);
 }
