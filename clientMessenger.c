@@ -23,7 +23,8 @@ char *RESET;
 #define clearScreen() printf("\033[H\033[J");fflush(stdout)
 extern int errno;
 int sd,isChatRoomProtected;
-int port,SFXsound = 1;
+int port,SFXsound = 1,SFXmusic = 1,SFXbackgroundMusic = 1,SFXintro = 1;
+pid_t SFXMusicChild;
 int writeFlag = 0,option=-1,bufferSize,readFlag = 0,newMessage = 0,checkID,isInChatRoom = 0;
 char *buffer,*buffer2,*username,*chatWith;
 int myID=-1,chatWithID=-1,isOnline = 0;
@@ -56,6 +57,7 @@ void onCtrlC(int sig)
   exit(sd);
 }
 static void *writeToServer(void*);
+static void *onLoginSFXMusic(void*);
 int validUsername(char* name)
 {
   int i=0;
@@ -78,6 +80,15 @@ void actualizateNewMessages()
   read(sd,&newMessage,sizeof(newMessage));
   readFlag = 0;
 }
+static void *onLoginSFXMusic(void* arg)
+{
+    SFXMusicChild = fork();
+    if(SFXMusicChild == 0)
+      system("aplay effect.wav");
+  return(NULL);
+}
+
+pthread_t th0;
 int main (int argc, char *argv[])
 {
   RESET = malloc(50);
@@ -119,6 +130,7 @@ int main (int argc, char *argv[])
   pthread_t th;
   while(1)
   {
+    sleep(0.3);
     bcopy((char*)&actfds,(char*)&readfds,sizeof(readfds));
     if(select(sd+1,&readfds,NULL,NULL,&tv) < 0)
     {
@@ -240,6 +252,7 @@ int main (int argc, char *argv[])
 }
 static void *writeToServer(void *arg)
 {
+  pthread_t th2;
   int i;
   char* text;
   switch(option)
@@ -354,6 +367,8 @@ static void *writeToServer(void *arg)
       }
       break;//request password
     case 4: //general menu
+      if(SFXbackgroundMusic)
+        pthread_create(&th2,NULL,&onLoginSFXMusic,NULL);
       isOnline = 1;
       bzero(&chatWith,sizeof(chatWith));
       chatWithID = -1;
@@ -1347,7 +1362,12 @@ static void *writeToServer(void *arg)
         printf("[%sON%s]\n",GRN,RESET);
       else
         printf("[%sOFF%s]\n",RED,RESET);
-      printf(">[%s2%s]Color\n",RED,RESET);
+      printf(">[%s2%s]SFX Music",RED,RESET);
+      if(SFXbackgroundMusic)
+        printf("[%sON%s]\n",GRN,RESET);
+      else
+        printf("[%sOFF%s]\n",RED,RESET);
+      printf(">[%s3%s]Color\n",RED,RESET);
       printf(">[0]Back\n");
       fflush(stdout);
       buffer = malloc(500);
@@ -1358,6 +1378,7 @@ static void *writeToServer(void *arg)
         {
           case 1:option=29;break;
           case 2:option=30;break;
+          case 3:option=31;break;
           default:option=4;break;
         }
       }
@@ -1366,7 +1387,7 @@ static void *writeToServer(void *arg)
       clearScreen();
       printf(">Messenger by Paul\n");
       printf("----You: %s----\n",username);
-      printf("*****Settings*****\n");
+      printf("*****SFX Sound*****\n");
       printf(">[%s1%s]ON\n>[%s2%s]OFF\n[0]Back\n",RED,RESET,RED,RESET);fflush(stdout);
       buffer = malloc(500);
       getline(&buffer,&sizeT,stdin);
@@ -1378,10 +1399,35 @@ static void *writeToServer(void *arg)
           default:option=28;break;
         }
       break;
-    case 30://color
+    case 30://SFX Music
+      clearScreen();
+      printf(">Messenger by Paul\n");
+      printf("----You: %s----\n",username);
+      printf("*****SFX Music*****\n");
+      printf(">[%s1%s]ON\n>[%s2%s]OFF\n[0]Back\n",RED,RESET,RED,RESET);fflush(stdout);
+      buffer = malloc(500);
+      getline(&buffer,&sizeT,stdin);
+      if(buffer[0] != '\n')
+        switch(atoi(buffer))
+        {
+          case 1:
+            SFXbackgroundMusic = 1;
+            option = 28; 
+            break;
+          case 2:
+            SFXbackgroundMusic = 0;
+            option = 28; 
+            break;
+          default:
+            option=28;
+            break;
+        }
+      break;
+    case 31://color
       clearScreen();
       printf("%s>Messenger by Paul\n",RESET);
       printf("----You: %s----\n",username);
+      printf("*****Colors*****\n");
       printf("[%s1%s]Red\n",RED,RESET);
       printf("[%s2%s]Green\n",RED,RESET);
       printf("[%s3%s]Yellow\n",RED,RESET);
@@ -1405,7 +1451,7 @@ static void *writeToServer(void *arg)
           case 6: strcpy(RESET,"\033[36m");break;
           case 7: strcpy(RESET,"\033[37m");break;
           case 8: strcpy(RESET,"\033[0m");break;
-          default:option=29;break;
+          default:option=28;break;
         }
 
       break;

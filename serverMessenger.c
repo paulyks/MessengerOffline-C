@@ -391,7 +391,7 @@ int main ()
 						pthread_t th;
 						FD_CLR(fd,&actfds);
 						pthread_create(&th,NULL,&writeToClient,&thD);
-						sleep(1);
+						sleep(0.3);
 						break;
     			}
     			
