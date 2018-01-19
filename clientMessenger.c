@@ -19,29 +19,40 @@
 #define MAG   "\x1B[35m"
 #define CYN   "\x1B[36m"
 #define WHT   "\x1B[37m"
+#define GOD "\x1B[41m"
+#define DFT "\x1B[0m"
 char *RESET;
 #define clearScreen() printf("\033[H\033[J");fflush(stdout)
+//#define clearScreen() fflush(stdout)
 extern int errno;
-int sd,isChatRoomProtected;
+int sd,isChatRoomProtected,usernameExistInDBerror = 0;
 int port,SFXsound = 1,SFXmusic = 1,SFXbackgroundMusic = 1,SFXintro = 1;
 pid_t SFXMusicChild;
 int writeFlag = 0,option=-1,bufferSize,readFlag = 0,newMessage = 0,checkID,isInChatRoom = 0;
 char *buffer,*buffer2,*username,*chatWith;
 int myID=-1,chatWithID=-1,isOnline = 0;
-size_t sizeT = 500;
+size_t sizeT = 251;
+void wwrite(int srvToWrite,int optionToWrite)
+{
+  if(write(srvToWrite,&optionToWrite,sizeof(optionToWrite)) == -1)
+  {
+    perror("Error at write.\n");
+    exit(1);
+  }
+}
 void onCtrlC(int sig)
 {
   clearScreen();
   int option = -1;
-  write(sd,&option,sizeof(option));
+  wwrite(sd,option);
   bufferSize = strlen(username);
-  write(sd,&isOnline,sizeof(isOnline));
+  wwrite(sd,isOnline);
   if(isOnline == 1)
   {
-    write(sd,&chatWithID,sizeof(chatWithID));
-    write(sd,&bufferSize,sizeof(bufferSize));
+    wwrite(sd,chatWithID);
+    wwrite(sd,bufferSize);
     write(sd,username,bufferSize);
-    write(sd,&isInChatRoom,sizeof(isInChatRoom));
+    wwrite(sd,isInChatRoom);
     if(isInChatRoom)
     {
       bufferSize = strlen(chatWith);
@@ -74,8 +85,8 @@ void actualizateNewMessages()
   int msg = 8;
   write(sd,&msg,sizeof(msg));
   bufferSize = strlen(username);
-  readFlag = 1;
   write(sd,&bufferSize,sizeof(bufferSize));
+  readFlag = 1;
   write(sd,username,bufferSize);
   read(sd,&newMessage,sizeof(newMessage));
   readFlag = 0;
@@ -87,6 +98,7 @@ static void *onLoginSFXMusic(void* arg)
       system("aplay effect.wav");
   return(NULL);
 }
+
 
 pthread_t th0;
 int main (int argc, char *argv[])
@@ -130,7 +142,6 @@ int main (int argc, char *argv[])
   pthread_t th;
   while(1)
   {
-    sleep(0.3);
     bcopy((char*)&actfds,(char*)&readfds,sizeof(readfds));
     if(select(sd+1,&readfds,NULL,NULL,&tv) < 0)
     {
@@ -163,23 +174,20 @@ int main (int argc, char *argv[])
             option = 4;
             break;
           case 103: //receive message
+            readFlag = 1;
             read(sd,&checkID,sizeof(checkID));
             read(sd,&bufferSize,sizeof(bufferSize));
-            bzero(&recvMessage,sizeof(recvMessage));
+            bzero(recvMessage,sizeof(recvMessage));
             recvMessage = malloc(bufferSize);
             read(sd,recvMessage,bufferSize);
             recvMessage[bufferSize] = '\0';
             if(checkID == chatWithID)
             {
-              checkID = 1;
-              write(sd,&checkID,sizeof(checkID));
               printf("%s\n",recvMessage);
               fflush(stdout);
             }
             else
             {
-              checkID = 0;
-              write(sd,&checkID,sizeof(checkID));
               recvMessage = strtok(recvMessage,":");
               printf("%s***You have a new message from %s.***\n%s",WHT,recvMessage,RESET);
               newMessage++;
@@ -190,12 +198,12 @@ int main (int argc, char *argv[])
                 fflush(stdout);
               }
             }
-            free(recvMessage);
+            readFlag = 0;
             break;
           case 104:
             if(chatWithID != -1)
             {
-              printf(">%s%s has left conversation.\n%s",WHT,chatWith,RESET);
+              printf(">%sUser has left conversation.\n%s",WHT,RESET);
               fflush(stdout);
               if(SFXsound)
               {
@@ -205,17 +213,21 @@ int main (int argc, char *argv[])
             }
             break;
           case 105: //is not your friend to remove it
+            readFlag = 1;
             read(sd,&bufferSize,sizeof(bufferSize));
             recvMessage = malloc(bufferSize);
             read(sd,recvMessage,bufferSize);
+            readFlag = 0;
             recvMessage[bufferSize] = '\0';
             printf("%s%s is not in your friend list.\n%s",YEL,recvMessage,RESET);
             fflush(stdout);
             break;
           case 106:
+            readFlag = 1;
             read(sd,&bufferSize,sizeof(bufferSize));
             recvMessage = malloc(bufferSize);
             read(sd,recvMessage,bufferSize);
+            readFlag = 0;
             recvMessage[bufferSize] = '\0';
             printf("%s%s is not your friend anymore.\n%s",RED,recvMessage,RESET);
             fflush(stdout);
@@ -225,9 +237,12 @@ int main (int argc, char *argv[])
             option = 18;
             break;
           case 108://receive message from lobby
+            readFlag = 1;
             read(sd,&bufferSize,sizeof(bufferSize));
+            bzero(&recvMessage,sizeof(recvMessage));
             recvMessage = malloc(bufferSize);
             read(sd,recvMessage,bufferSize);
+            readFlag = 0;
             recvMessage[bufferSize] = '\0';
             printf("%s",recvMessage);
             fflush(stdout);
@@ -237,7 +252,7 @@ int main (int argc, char *argv[])
               fflush(stdout);
             }
             break;
-        }
+        } 
       }
     }
     if(writeFlag == 0)
@@ -260,7 +275,9 @@ static void *writeToServer(void *arg)
     case -1:
       buffer = malloc(1);
       bufferSize = 1;
+      readFlag = 1;
       read(0,buffer,1);
+      readFlag = 0;
       clearScreen();
       if(buffer[0] == '0')
         option = 0; // login
@@ -274,9 +291,15 @@ static void *writeToServer(void *arg)
       clearScreen();
       printf(">Login into Messenger by Paul.\n");
       fflush(stdout);
+      if(usernameExistInDBerror)
+      {
+        printf("%s***This username doesn't exist in database.***%s\n",RED,RESET);
+        fflush(stdout);
+        usernameExistInDBerror = 0;
+      }
       printf("Username:");
       fflush(stdout);
-      buffer = malloc(500);
+      buffer = malloc(250);
       getline(&buffer,&sizeT,stdin);
       buffer[strlen(buffer)-1] = '\0';
       username = malloc(strlen(buffer));
@@ -295,7 +318,7 @@ static void *writeToServer(void *arg)
     case 1: // register
       printf("Username:");
       fflush(stdout);
-      buffer = malloc(500);
+      buffer = malloc(250);
       getline(&buffer,&sizeT,stdin);
       buffer[strlen(buffer)-1] = '\0';
       username = malloc(strlen(buffer));
@@ -342,7 +365,7 @@ static void *writeToServer(void *arg)
     case 3:
       printf("Password:");
       fflush(stdout);
-      buffer2 = malloc(500);
+      buffer2 = malloc(250);
       getline(&buffer2,&sizeT,stdin);
       buffer2[strlen(buffer2)-1] = '\0';
       if(buffer2[0] == '\0')
@@ -374,7 +397,7 @@ static void *writeToServer(void *arg)
       chatWithID = -1;
       actualizateNewMessages();
       clearScreen();
-      printf(">Messenger by Paul\n");
+      printf("%s>Messenger by Paul\n",DFT);
       printf("----You: %s----\n",username);
       printf("|[%s1%s]----View friends----|\n",RED,RESET);
       printf("|[%s2%s]----View online users----|\n",RED,RESET);
@@ -398,6 +421,7 @@ static void *writeToServer(void *arg)
         case '5':option=15;break;
         case '6':option=16;break;
         case '7':option=28;break;
+        case 'X':option=32;break;
         default:option=4;break;
       }
       clearScreen();
@@ -436,13 +460,9 @@ static void *writeToServer(void *arg)
       fflush(stdout);
       break;//incorrect password
     case 7://error login
+      usernameExistInDBerror = 1;
       option = 0;
-      clearScreen();
-      printf(">Login into Messenger by Paul.\n");
-      fflush(stdout);
-      printf("%s***This username doesn't exist in database.***%s\n",RED,RESET);
-      fflush(stdout);
-      break;//error login
+      break;
     case 8://error login2
       clearScreen();
       printf(">Login into Messenger by Paul.\n");
@@ -483,10 +503,12 @@ static void *writeToServer(void *arg)
           read(sd,&myID,sizeof(myID));
           bufferSize = strlen(chatWith);
           write(sd,&bufferSize,sizeof(bufferSize));
+          readFlag = 1;
           write(sd,chatWith,bufferSize);
           read(sd,&chatWithID,sizeof(chatWithID));
           read(sd,&bufferSize,sizeof(bufferSize));
           read(sd,buffer,bufferSize);
+          readFlag = 0;
           buffer[bufferSize] = '\0';
           printf("%s\n",buffer);
           buffer[0] = '\0';
@@ -524,13 +546,12 @@ static void *writeToServer(void *arg)
       fflush(stdout);
       bzero(&buffer2,sizeof(buffer2));
       bzero(&buffer,sizeof(buffer));
-      buffer2 = malloc(500);
+      buffer2 = malloc(250);
       getline(&buffer2,&sizeT,stdin);
       if(buffer2[0] != '\n')
       {
-        buffer = malloc(strlen(username) + strlen(buffer2) + 5);
+        buffer = malloc(strlen(username) + strlen(buffer2) + 50);
         sprintf(buffer,"%s:%s",username,buffer2);
-        fflush(stdout);
         bufferSize = strlen(buffer);  
         option = 5;
         write(sd,&option,sizeof(option));
@@ -545,8 +566,8 @@ static void *writeToServer(void *arg)
       option = 9;
       write(sd,&option,sizeof(option));
       bufferSize = strlen(username);
-      readFlag = 1;
       write(sd,&bufferSize,sizeof(bufferSize));
+      readFlag = 1;
       write(sd,username,bufferSize);
       read(sd,&bufferSize,sizeof(bufferSize));
       buffer = malloc(bufferSize);
@@ -612,8 +633,8 @@ static void *writeToServer(void *arg)
       break;
     case 12: //show online users
       option = 2;
-      write(sd,&option,sizeof(option));
       readFlag = 1;
+      write(sd,&option,sizeof(option));
       read(sd,&bufferSize,sizeof(bufferSize));
       buffer = malloc(bufferSize+5);
       read(sd,buffer,bufferSize);
@@ -681,8 +702,8 @@ static void *writeToServer(void *arg)
       option = 11;
       write(sd,&option,sizeof(option));
       bufferSize = strlen(username);
-      readFlag = 1;
       write(sd,&bufferSize,sizeof(bufferSize));
+      readFlag = 1;
       write(sd,username,bufferSize);
       read(sd,&bufferSize,sizeof(bufferSize));
       buffer = malloc(bufferSize);
@@ -761,8 +782,8 @@ static void *writeToServer(void *arg)
         write(sd,&bufferSize,sizeof(bufferSize));
         write(sd,username,bufferSize);
         bufferSize = strlen(buffer);
-        readFlag = 1;
         write(sd,&bufferSize,sizeof(bufferSize));
+        readFlag = 1;
         write(sd,buffer,bufferSize);
         read(sd,&bufferSize,sizeof(bufferSize));
         buffer = malloc(bufferSize);
@@ -828,8 +849,8 @@ static void *writeToServer(void *arg)
       option = 13;
       write(sd,&option,sizeof(option));
       bufferSize = strlen(username);
-      readFlag = 1;
       write(sd,&bufferSize,sizeof(bufferSize));
+      readFlag = 1;
       write(sd,username,bufferSize);
       read(sd,&bufferSize,sizeof(bufferSize));
       buffer = malloc(bufferSize);
@@ -895,7 +916,7 @@ static void *writeToServer(void *arg)
       printf(">[%s3%s] Search chatroom by name.\n",RED,RESET);
       printf("[0] Back\n");
       fflush(stdout);
-      buffer = malloc(500);
+      buffer = malloc(250);
       getline(&buffer,&sizeT,stdin);
       switch(buffer[0])
       {
@@ -956,7 +977,7 @@ static void *writeToServer(void *arg)
       }
       printf("[0] Back\n");
       fflush(stdout);
-      buffer = malloc(500);
+      buffer = malloc(250);
       scanf("%s",buffer);
       if(atoi(buffer) > 0 && atoi(buffer) < i)
       {
@@ -989,7 +1010,7 @@ static void *writeToServer(void *arg)
       fflush(stdout);
       printf("Chatroom name:");
       fflush(stdout);
-      chatWith = malloc(500);
+      chatWith = malloc(250);
       getline(&chatWith,&sizeT,stdin);
       chatWith[strlen(chatWith)-1] = '\0';
       if(chatWith[0] !=  '\n')
@@ -1017,8 +1038,8 @@ static void *writeToServer(void *arg)
         option = 22;
         write(sd,&option,sizeof(option));
         bufferSize = strlen(buffer);
-        readFlag = 1;
         write(sd,&bufferSize,sizeof(bufferSize));
+        readFlag = 1;
         write(sd,buffer,bufferSize);
         read(sd,&bufferSize,sizeof(bufferSize));
         buffer = malloc(bufferSize);
@@ -1063,7 +1084,7 @@ static void *writeToServer(void *arg)
         }
         printf("[0] Back\n");
         fflush(stdout);
-        buffer = malloc(500);
+        buffer = malloc(250);
         scanf("%s",buffer);
         if(atoi(buffer) > 0 && atoi(buffer) < i)
         {
@@ -1128,9 +1149,9 @@ static void *writeToServer(void *arg)
       clearScreen();
       option = 21;
       write(sd,&option,sizeof(option));
-      readFlag = 1;
       bufferSize = strlen(chatWith);
       write(sd,&bufferSize,sizeof(bufferSize));
+      readFlag = 1;
       write(sd,chatWith,bufferSize);
       read(sd,&bufferSize,sizeof(bufferSize));
       buffer = malloc(bufferSize+5);
@@ -1204,7 +1225,7 @@ static void *writeToServer(void *arg)
       fflush(stdout);
       printf("Chatroom password%s(use 0 for no password)%s:",RED,RESET);
       fflush(stdout);
-      buffer = malloc(500);
+      buffer = malloc(250);
       getline(&buffer,&sizeT,stdin);
       buffer[strlen(buffer)-1] = '\0';
       if(buffer[0] != '\n')
@@ -1236,7 +1257,7 @@ static void *writeToServer(void *arg)
     case 25://talk in chatroom
       if(isInChatRoom == 0)
       {
-        buffer = malloc(2);
+        buffer = malloc(100);
         buffer[0] = '\0';
         option = 18;
         write(sd,&option,sizeof(option));
@@ -1252,9 +1273,8 @@ static void *writeToServer(void *arg)
         write(sd,buffer,bufferSize);
         isInChatRoom = 1;
       }
-      buffer = malloc(500);
+      buffer = malloc(250);
       getline(&buffer,&sizeT,stdin);
-      buffer[strlen(buffer)] = '\0';
       if(buffer[0] != '\n')
       {
         if(buffer[0] == '0' && buffer[1] == '\n')
@@ -1275,6 +1295,7 @@ static void *writeToServer(void *arg)
         {
           option = 18;
           write(sd,&option,sizeof(option));
+          option = 25;
           bufferSize = strlen(username);
           write(sd,&bufferSize,sizeof(bufferSize));
           write(sd,username,bufferSize);
@@ -1284,7 +1305,6 @@ static void *writeToServer(void *arg)
           bufferSize = strlen(buffer);
           write(sd,&bufferSize,sizeof(bufferSize));
           write(sd,buffer,bufferSize);
-          option = 25;
         }
       }
       break;
@@ -1296,7 +1316,7 @@ static void *writeToServer(void *arg)
       fflush(stdout);
       printf("Chatroom name:%s\nPassword:",chatWith);
       fflush(stdout);
-      buffer = malloc(500);
+      buffer = malloc(250);
       getline(&buffer,&sizeT,stdin);
       buffer[strlen(buffer)-1] = '\0';
       if(strlen(buffer) > 0)
@@ -1326,9 +1346,9 @@ static void *writeToServer(void *arg)
       fflush(stdout);
       printf("----You: %s----\n>%sUse 0 to get back.%s\n",username,RED,RESET);
       fflush(stdout);
-      printf("Chatroom name:%s\n%s%s is not the right password.%s\nTry again:",chatWith,RED,RESET,buffer);
+      printf("Chatroom name:%s\n%s%s is not the right password.%s\nTry again:",chatWith,RED,buffer,RESET);
       fflush(stdout);
-      buffer = malloc(500);
+      buffer = malloc(250);
       getline(&buffer,&sizeT,stdin);
       buffer[strlen(buffer)-1] = '\0';
       if(strlen(buffer) > 0)
@@ -1370,7 +1390,7 @@ static void *writeToServer(void *arg)
       printf(">[%s3%s]Color\n",RED,RESET);
       printf(">[0]Back\n");
       fflush(stdout);
-      buffer = malloc(500);
+      buffer = malloc(250);
       getline(&buffer,&sizeT,stdin);
       if(buffer[0] != '\n')
       {
@@ -1389,7 +1409,7 @@ static void *writeToServer(void *arg)
       printf("----You: %s----\n",username);
       printf("*****SFX Sound*****\n");
       printf(">[%s1%s]ON\n>[%s2%s]OFF\n[0]Back\n",RED,RESET,RED,RESET);fflush(stdout);
-      buffer = malloc(500);
+      buffer = malloc(250);
       getline(&buffer,&sizeT,stdin);
       if(buffer[0] != '\n')
         switch(atoi(buffer))
@@ -1405,7 +1425,7 @@ static void *writeToServer(void *arg)
       printf("----You: %s----\n",username);
       printf("*****SFX Music*****\n");
       printf(">[%s1%s]ON\n>[%s2%s]OFF\n[0]Back\n",RED,RESET,RED,RESET);fflush(stdout);
-      buffer = malloc(500);
+      buffer = malloc(250);
       getline(&buffer,&sizeT,stdin);
       if(buffer[0] != '\n')
         switch(atoi(buffer))
@@ -1438,7 +1458,7 @@ static void *writeToServer(void *arg)
       printf("[%s8%s]Default\n",RED,RESET);
       printf("[0]Back\n");
       fflush(stdout);
-      buffer = malloc(500);
+      buffer = malloc(250);
       getline(&buffer,&sizeT,stdin);
       if(buffer[0] != '\n');
         switch(atoi(buffer))
@@ -1454,6 +1474,85 @@ static void *writeToServer(void *arg)
           default:option=28;break;
         }
 
+      break;
+    case 32://godmode
+      clearScreen();
+      printf("%s%s>Messenger by Paul\n",GOD,RESET);
+      printf("----GOD: %s----\n",username);
+      printf("[1] DELETE USER FROM DATABASE\n");
+      printf("[2] DELETE CONVERSATION BETWEEN USERS\n");
+      printf("[0]BACK TO NORMAL USER\n");
+      fflush(stdout);
+      buffer = malloc(250);
+      getline(&buffer,&sizeT,stdin);
+      switch(buffer[0])
+      {
+        case '0':
+          option = 4;
+          break;
+        case '1':
+          option = 33;
+          break;
+        case '2':
+          option = 34;
+          break;
+      }
+      break;
+    case 33://DELETE USER
+      clearScreen();
+      printf("%s>Messenger by Paul\n",GOD);
+      printf("----GOD: %s----\n",username);
+      printf("DELETE USER(0 for get back):");
+      fflush(stdout);
+      buffer = malloc(250);
+      getline(&buffer,&sizeT,stdin);
+      buffer[strlen(buffer)-1] = '\0';
+      if(buffer[0] == '0' && buffer[1] == '\0')
+        option = 32;
+      else
+      {
+        option = 23;
+        write(sd,&option,sizeof(option));
+        bufferSize = strlen(buffer);
+        write(sd,&bufferSize,sizeof(bufferSize));
+        write(sd,buffer,bufferSize);
+        option = 33;
+      }
+      break;
+    case 34://DELETE CONV BETWEEN USERS
+      clearScreen();
+      printf("%s>Messenger by Paul\n",GOD);
+      printf("----GOD: %s----\n",username);
+      printf("DELETE CONVERSATION BETWEEN USERS(0 for get back)");
+      printf("USER 1:");
+      fflush(stdout);
+      buffer = malloc(250);
+      getline(&buffer,&sizeT,stdin);
+      buffer[strlen(buffer)-1] = '\0';
+      if(buffer[0] == '0' && buffer[1] == '\0')
+        option = 32;
+      else
+      {
+        printf("USER 2:");
+        fflush(stdout);
+        buffer2 = malloc(250);
+        getline(&buffer2,&sizeT,stdin);
+        buffer2[strlen(buffer2)-1] = '\0';
+        if(buffer2[0] == '0' && buffer2[1] == '\0')
+          option = 32;
+        else
+        {
+          option = 24;
+          write(sd,&option,sizeof(option));
+          bufferSize = strlen(buffer);
+          write(sd,&bufferSize,sizeof(bufferSize));
+          write(sd,buffer,bufferSize);
+          bufferSize = strlen(buffer2);
+          write(sd,&bufferSize,sizeof(bufferSize));
+          write(sd,buffer2,bufferSize);
+          option = 34;
+        }
+      }
       break;
   }
   writeFlag = 0;

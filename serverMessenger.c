@@ -15,7 +15,7 @@
 
 #include <my_global.h>
 #include <mysql.h>
-
+#define showstr(a) printf("%s = %s\n",#a,a);fflush(stdout);
 #define clearScreen() printf("\033[H\033[J");fflush(stdout)
 #define PORT 2728
 
@@ -41,12 +41,14 @@ void finish_with_error(MYSQL *con)
 {
   fprintf(stderr, "%s\n", mysql_error(con));
   mysql_close(con);
-  exit(1);        
+  exit(1);
 }
 void query(MYSQL* con,char* text)
 {
 	if(mysql_query(con,text))
 		finish_with_error(con);
+	printf("%s\n",text);
+	fflush(stdout);
 }
 
 int accountExist(MYSQL* con,char* buffer)
@@ -61,11 +63,16 @@ int accountExist(MYSQL* con,char* buffer)
 	MYSQL_ROW row;
 	if((row = mysql_fetch_row(result)))
 		line = 1;
-	mysql_free_result(result);
+	//mysql_free_result(result);
+	showstr(text);
+	free(text);
+	printf("accountExist finished\n");fflush(stdout);
 	return line == 0?0:1;
 }
-void registerAcc(char* text,struct accounts *accounts,MYSQL *con)
+void registerAcc(char* textC,struct accounts *accounts,MYSQL *con)
 {
+	char* text = malloc(strlen(textC));
+	strcpy(text,textC);
 	time_t t = time(NULL);
 	struct tm tm = *localtime(&t);
 	char *name = malloc(strlen(text));
@@ -76,9 +83,14 @@ void registerAcc(char* text,struct accounts *accounts,MYSQL *con)
 	sprintf(string,"%s,'%d-%d-%d'","INSERT INTO users VALUES(0",tm.tm_year+1900,tm.tm_mon+1,tm.tm_mday);
 	sprintf(string,"%s,'%s','%s',%d,%d)",string,name,password,1,0);
 	query(con,string);
+	showstr(text);
+	free(text);
+	printf("registerAcc finished\n");fflush(stdout);
 }
-int loginAcc(MYSQL *con,char* buffer)
+int loginAcc(MYSQL *con,char* bufferC)
 {
+	char* buffer = malloc(strlen(bufferC));
+	strcpy(buffer,bufferC);
 	char *name = malloc(strlen(buffer));
 	char *password = malloc(strlen(buffer));
 	name = strtok(buffer,":");
@@ -93,13 +105,16 @@ int loginAcc(MYSQL *con,char* buffer)
 	MYSQL_ROW row;
 	if((row = mysql_fetch_row(result)))
 		line = 1;
-	mysql_free_result(result);
+	//mysql_free_result(result);
 	if(line == 1)
 	{
 		sprintf(string,"UPDATE users SET Status = 1 WHERE Name = '%s'",name);
 		query(con,string);
 
 	}
+	showstr(buffer);
+	free(buffer);
+	printf("loginAcc finished\n");fflush(stdout);
 	return line == 0?0:1;
 }
 void disconnect(MYSQL *con,char* buffer)
@@ -107,6 +122,10 @@ void disconnect(MYSQL *con,char* buffer)
 	char* text = malloc(256);
 	sprintf(text,"UPDATE users SET Status = 0 Where Name='%s'",buffer);
 	query(con,text);
+	showstr(text);
+	free(text);
+
+	printf("disconnect finished\n");fflush(stdout);
 }
 int isOnline(MYSQL *con,char *buffer)
 {
@@ -124,12 +143,19 @@ int isOnline(MYSQL *con,char *buffer)
 	int status = 0;
 	if((row = mysql_fetch_row(result)))
 		status = (status == atoi(row[0]) ? 0:1);
+	//mysql_free_result(result);
+	showstr(name);
+	free(name);
+	showstr(string);
+	free(string);
+	printf("isOnline finished\n");fflush(stdout);
 	return !status;
 }
 void populateAccounts(MYSQL *con,int fd,char *buffer)
 {
 	char *text = malloc(strlen(buffer)+256);
-	sprintf(text,"SELECT * FROM users WHERE Name='%s'",buffer);
+	char *name = strtok(buffer,":");
+	sprintf(text,"SELECT * FROM users WHERE Name='%s'",name);
 	query(con,text);
 	MYSQL_RES *result = mysql_store_result(con);
 	if(result == NULL)
@@ -140,12 +166,17 @@ void populateAccounts(MYSQL *con,int fd,char *buffer)
 	strcpy(accounts[fd].name,row[2]);
 	accounts[fd].status = atoi(row[4]);
 	accounts[fd].status = atoi(row[5]);
+	showstr(text);
+	free(text);
+	printf(" populateAccounts finished\n");fflush(stdout);
+	//mysql_free_result(result);
 }
 void wAccesingOnlineAccount(char*buffer,int nfds)
 {
 	fflush(stdout);
 	char *name = malloc(strlen(buffer));
-	name = strtok(buffer,":");
+	strcpy(name,buffer);
+	name = strtok(name,":");
 	for(int i = 0;i<=nfds;i++)
 	{
 		fflush(stdout);
@@ -156,23 +187,26 @@ void wAccesingOnlineAccount(char*buffer,int nfds)
 			break;
 		}
 	}
+	showstr(name);
+	free(name);
+	printf("wAccesingOnlineAcc finished\n");fflush(stdout);
 }
 void sendMessageToUser(int senderID,int userID,char* buffer)
 {
-	int userOnline = 0,opt = 103,i,userOnlineInChat = 0;;
+	int opt = 103,i;
 	buffer[strlen(buffer)-1] = '\0';
 	fflush(stdout);
 	for(i=0;i <= nfds; i++)
 	{
+		fflush(stdout);
 		if(accounts[i].id == userID)
 		{
-			userOnline = 1;
+			opt = 103;
 			write(accounts[i].fd,&opt,sizeof(opt));
 			write(accounts[i].fd,&senderID,sizeof(senderID));
 			opt = strlen(buffer);
 			write(accounts[i].fd,&opt,sizeof(opt));
 			write(accounts[i].fd,buffer,opt);
-			read(accounts[i].fd,&userOnlineInChat,sizeof(userOnlineInChat));
 			break;
 		}
 	}
@@ -180,12 +214,12 @@ void sendMessageToUser(int senderID,int userID,char* buffer)
 	buffer = strtok(NULL,"~");
 	time_t t = time(NULL);
 	struct tm tm = *localtime(&t);
-	char *txt = malloc(opt + 300);
-	if(userOnline == 1 && userOnlineInChat == 1)
-		sprintf(txt,"INSERT INTO message VALUES(0,%d,%d,'%d-%d-%d',1,'%s')",senderID,userID,tm.tm_year+1900,tm.tm_mon+1,tm.tm_mday,buffer);
-	else
-		sprintf(txt,"INSERT INTO message VALUES(0,%d,%d,'%d-%d-%d',0,'%s')",senderID,userID,tm.tm_year+1900,tm.tm_mon+1,tm.tm_mday,buffer);
+	char *txt = malloc(strlen(buffer) + 300);
+	sprintf(txt,"INSERT INTO message VALUES(0,%d,%d,'%d-%d-%d',0,'%s')",senderID,userID,tm.tm_year+1900,tm.tm_mon+1,tm.tm_mday,buffer);
 	query(con,txt);
+	showstr(txt);
+	free(txt);
+	printf("sendMessageToUser finished\n");fflush(stdout);
 }
 int exitFromChatOccured(char* txt)
 {
@@ -194,6 +228,7 @@ int exitFromChatOccured(char* txt)
 	if(txt[0] == '0')
 		return 1;
 	return 0;
+
 }
 void chatWithHasLeftConversation(int userID)
 {
@@ -207,59 +242,65 @@ void chatWithHasLeftConversation(int userID)
 }
 void sendMessageToLobby(char* buf,char* buf2,char* thrdBuf)
 {
-	char* text,*text2,*text3;
-	MYSQL_RES *result;
-	MYSQL_ROW row;
+	char* ttext,*ttext2,*ttext3;
+	MYSQL_RES *rresult;
+	MYSQL_ROW rrow;
 	int bufferSize;
-	text = malloc(300 + strlen(buf2));
+	ttext = malloc(300 + strlen(buf2));
 	int msg = 108;
-	sprintf(text,"SELECT User FROM chatRooms WHERE Name ='%s' AND User != (SELECT ID FROM users WHERE Name = '%s')",buf2,buf);
-	query(con,text);
-	result = mysql_store_result(con);
-	if(result == NULL)
+	sprintf(ttext,"SELECT User FROM chatRooms WHERE Name ='%s' AND User != (SELECT ID FROM users WHERE Name = '%s')",buf2,buf);
+	query(con,ttext);
+	rresult = mysql_store_result(con);
+	if(rresult == NULL)
 		finish_with_error(con);
-	text[0] = '\0';
-	if((row = mysql_fetch_row(result)))
+	ttext[0] = '\0';
+	if((rrow = mysql_fetch_row(rresult)))
 	{
-		text = malloc(strlen(row[0]));
-		sprintf(text,"%s",row[0]);
+		ttext = malloc(strlen(rrow[0])+50);
+		sprintf(ttext,"%s",rrow[0]);
 	}
-	while((row = mysql_fetch_row(result)))
+	while((rrow = mysql_fetch_row(rresult)))
 	{
-		text2 = malloc(strlen(row[0]) + strlen(text));
-		sprintf(text2,"%s,%s",text,row[0]);
-		text = malloc(strlen(text2));
-		strcpy(text,text2);
+		ttext2 = malloc(strlen(rrow[0]) + strlen(ttext)+100);
+		sprintf(ttext2,"%s,%s",ttext,rrow[0]);
+		ttext = malloc(strlen(ttext2)+50);
+		strcpy(ttext,ttext2);
 	}
-	if(text[0] != '\0')
+	if(ttext[0] != '\0')
 	{
-		text3 = malloc(strlen(buf) + strlen(buf2) + strlen(thrdBuf)+100);
+		ttext3 = malloc(strlen(buf) + strlen(buf2) + strlen(thrdBuf)+300);
 		if(thrdBuf[0] == '0' && thrdBuf[1] == '\0')
-			sprintf(text3,">%s has been disconnected from lobby.\n",buf);
+			sprintf(ttext3,">%s has been disconnected from lobby.\n",buf);
 		else
 			if(thrdBuf[0] == '\0')
-				sprintf(text3,">%s has joined to lobby.\n",buf);
+				sprintf(ttext3,">%s has joined to lobby.\n",buf);
 			else
-				sprintf(text3,"%s:%s",buf,thrdBuf);
+				sprintf(ttext3,"%s:%s",buf,thrdBuf);
 		fflush(stdout);
-		bufferSize = strlen(text3);
+		bufferSize = strlen(ttext3);
 		for(int i=0;i<=nfds;i++)
 		{
-			text2 = malloc(strlen(text));
-			strcpy(text2,text);
-			text2 = strtok(text2,",");
-			while(text2)
+			ttext2 = malloc(strlen(ttext)+5);
+			strcpy(ttext2,ttext);
+			ttext2 = strtok(ttext2,",");
+			while(ttext2)
 			{
-				if(accounts[i].id == atoi(text2))
+				if(accounts[i].id == atoi(ttext2))
 				{
+					msg = 108;
 					write(accounts[i].fd,&msg,sizeof(msg));
 					write(accounts[i].fd,&bufferSize,sizeof(bufferSize));
-					write(accounts[i].fd,text3,bufferSize);
+					write(accounts[i].fd,ttext3,bufferSize);
 				}
-				text2 = strtok(NULL,",");
+				ttext2 = strtok(NULL,",");
 			}
 		}
 	}
+	showstr(ttext);
+	free(ttext);
+	showstr(ttext3);
+	free(ttext3);
+	printf("sendToLobby finished\n");fflush(stdout);
 }
 int main ()
 {
@@ -320,7 +361,8 @@ int main ()
     int len,fd;
     printf("[SERVER] Messenger by Paul is up an ready for connections at port %d.\n",PORT);
     fflush(stdout);
-    pthread_t th;
+    pthread_t th[1000];
+   	bzero(&th,sizeof(th));
     while(1)
     {
     	bcopy((char*)&actfds,(char*)&readfds,sizeof(readfds));
@@ -329,6 +371,8 @@ int main ()
     		perror("[SERVER] Select error!\n");
     		return errno;
     	}
+    	//tv.tv_sec = 1;
+		//tv.tv_usec = 0;
     	if(FD_ISSET(sd,&readfds))
     	{
     		len = sizeof(from);
@@ -350,10 +394,11 @@ int main ()
     		{
     			bzero(&option,sizeof(option));
     			read(fd,&option,sizeof(option));
+    			printf("R:%d\n",option);fflush(stdout);
     			switch(option)
     			{
     				case -1:
-						FD_CLR(fd,&actfds);
+    					FD_CLR(fd,&actfds);
 						read(fd,&option,sizeof(option));
 						if(option == 1)
 						{
@@ -388,13 +433,12 @@ int main ()
 						bzero(&thD,sizeof(thD));
 						thD.fd = fd;
 						thD.option = option;
-						pthread_t th;
+						option = -100;
 						FD_CLR(fd,&actfds);
-						pthread_create(&th,NULL,&writeToClient,&thD);
-						sleep(0.3);
+						bzero(&th[fd],sizeof(th[fd]));
+						pthread_create(&th[fd],NULL,&writeToClient,&thD);
 						break;
     			}
-    			
     		}
     		FD_CLR(fd,&readfds);
     	}
@@ -468,6 +512,7 @@ static void* writeToClient(void* arg)
 				buffer2 = malloc(strlen(buffer));
 				strcpy(buffer2,buffer);
 			} 
+			//mysql_free_result(result);
 			bufferSize = strlen(buffer2);
 			write(thD.fd,&bufferSize,sizeof(bufferSize));
 			write(thD.fd,buffer2,bufferSize);
@@ -491,7 +536,7 @@ static void* writeToClient(void* arg)
 				id1 = atoi(row[0]);
 			if((row = mysql_fetch_row(result)))
 				id2 = atoi(row[0]);
-			mysql_free_result(result);
+			//mysql_free_result(result);
 			text = malloc(256);
 			sprintf(text,"SELECT 1 from friends WHERE ID = %d and Friend = %d",id1,id2);
 			query(con,text);
@@ -512,6 +557,7 @@ static void* writeToClient(void* arg)
 				thD.option = 102;
 				write(thD.fd,&thD.option,sizeof(thD.option));
 			}
+			//mysql_free_result(result);
 			break;
 		case 4: //openChat
 			read(thD.fd,&bufferSize,sizeof(bufferSize));
@@ -533,12 +579,14 @@ static void* writeToClient(void* arg)
 			buffer2[bufferSize] = '\0';
 			text = malloc(bufferSize+150);
 			sprintf(text,"SELECT ID FROM users Where Name = '%s'",buffer2);
+			//mysql_free_result(result);
 			query(con,text);
 			result = mysql_store_result(con);
 			if(result == NULL)
 				finish_with_error(con);
 			if((row = mysql_fetch_row(result)))
 				id2 = atoi(row[0]);
+			//mysql_free_result(result);
 			write(thD.fd,&id2,sizeof(id2));
 			//sending messages
 			text = malloc(300);
@@ -548,7 +596,7 @@ static void* writeToClient(void* arg)
 			if(result == NULL)
 				finish_with_error(con);
 			index = 0;
-			text3 = malloc(50);
+			text3 = malloc(250);
 			sprintf(text3,">\x1B[31mEnter 0 to exit from this conversation.\x1B[0m");
 			while((row = mysql_fetch_row(result)) && index < 10)
 			{
@@ -559,7 +607,7 @@ static void* writeToClient(void* arg)
 					sprintf(text,"%s:%s",buffer,row[4]);
 				text2 = malloc(strlen(text) + strlen(text3)+5);
 				sprintf(text2,"%s\n%s",text,text3);
-				text3 = malloc(strlen(text2)+30);
+				text3 = malloc(strlen(text2)+150);
 				if(atoi(row[3]) == 1)
 				{
 					sprintf(text3,"\033[37m%s",text2);
@@ -572,7 +620,7 @@ static void* writeToClient(void* arg)
 			bufferSize = strlen(text3);
 			write(thD.fd,&bufferSize,sizeof(bufferSize));
 			write(thD.fd,text3,bufferSize);
-			text = malloc(300);
+			text = malloc(350);
 			sprintf(text,"UPDATE message SET Seen = 1 WHERE Seen = 0 AND `From` = %d AND `To` = %d",id2,id1);
 			query(con,text);
 			break;
@@ -583,19 +631,22 @@ static void* writeToClient(void* arg)
 			buffer = malloc(bufferSize);
 			read(thD.fd,buffer,bufferSize);
 			buffer[bufferSize] = '\0';
-			buffer2 = malloc(strlen(buffer));
+			buffer2 = malloc(bufferSize+50);
 			strcpy(buffer2,buffer);
 			if(exitFromChatOccured(buffer2))
 			{
+				buffer = malloc(250);
+				sprintf(buffer,"UPDATE message SET Seen = 1 WHERE Seen = 0 AND `From` = %d AND `To` = %d",id2,id1);
+				query(con,buffer);
+				chatWithHasLeftConversation(id2);
 				thD.option = 4;
 				write(thD.fd,&thD.option,sizeof(thD.option));
-				chatWithHasLeftConversation(id2);
 			}
 			else
 			{
+				sendMessageToUser(id1,id2,buffer);
 				thD.option = 10;
 				write(thD.fd,&thD.option,sizeof(thD.option));
-				sendMessageToUser(id1,id2,buffer);
 			}
 			break;
 		case 6: //finish register
@@ -603,7 +654,11 @@ static void* writeToClient(void* arg)
 			buffer = malloc(bufferSize);
 			read(thD.fd,buffer,bufferSize);
 			buffer[bufferSize] = '\0';
+			buffer2 = malloc(strlen(buffer));
+			strcpy(buffer2,buffer);
 			registerAcc(buffer,accounts,con);
+			buffer2 = strtok(buffer2,":");
+			populateAccounts(con,thD.fd,buffer2);
 			break;
 		case 7://continue login
 			read(thD.fd,&bufferSize,sizeof(bufferSize));
@@ -646,6 +701,7 @@ static void* writeToClient(void* arg)
 				finish_with_error(con);
 			if((row = mysql_fetch_row(result)))
 				bufferSize = atoi(row[0]);
+			//mysql_free_result(result);
 			write(thD.fd,&bufferSize,sizeof(bufferSize));
 			break;
 		case 9: //show friends
@@ -659,26 +715,29 @@ static void* writeToClient(void* arg)
 			result = mysql_store_result(con);
 			if(result == NULL)
 				finish_with_error(con);
-			bzero(&text2,sizeof(text2));
 			text3 = malloc(3);
 			text3[0] = '>';
 			text3[1] = '\0';
 			if((row = mysql_fetch_row(result)))
 			{
+				showstr(text3);
+				free(text3);
 				text = malloc(strlen(row[0]) + 5);
-				sprintf(text,"%s,%d",row[0],atoi(row[1]));
+				sprintf(text,"%s,%d,",row[0],atoi(row[1]));
 				text3 = malloc(strlen(text));
 				strcpy(text3,text);
-				fflush(stdout);
 			}
 			while((row = mysql_fetch_row(result)))
 			{
 				text = malloc(strlen(row[0]) + 5);
 				sprintf(text,"%s,%d,",row[0],atoi(row[1]));
 				text2 = malloc(strlen(text) + strlen(text3));
-				sprintf(text2,"%s,%s",text3,text);
+				sprintf(text2,"%s%s",text3,text);
+
+				text3 = malloc(strlen(text2));
 				strcpy(text3,text2);
 			}
+			//mysql_free_result(result);
 			bufferSize = strlen(text3);
 			write(thD.fd,&bufferSize,sizeof(bufferSize));
 			write(thD.fd,text3,bufferSize);
@@ -715,6 +774,7 @@ static void* writeToClient(void* arg)
 				write(thD.fd,&bufferSize,sizeof(bufferSize));
 				write(thD.fd,buffer2,bufferSize);
 			}
+			//mysql_free_result(result);
 			break;
 		case 11: //show all users
 			read(thD.fd,&bufferSize,sizeof(bufferSize));
@@ -727,26 +787,30 @@ static void* writeToClient(void* arg)
 			result = mysql_store_result(con);
 			if(result == NULL)
 				finish_with_error(con);
-			bzero(&text2,sizeof(text2));
 			text3 = malloc(3);
 			text3[0] = '>';
 			text3[1] = '\0';
 			if((row = mysql_fetch_row(result)))
 			{
+				showstr(text3);
+				free(text3);
 				text = malloc(strlen(row[0]) + 5);
-				sprintf(text,"%s,%d",row[0],atoi(row[1]));
+				sprintf(text,"%s,%d,",row[0],atoi(row[1]));
 				text3 = malloc(strlen(text));
 				strcpy(text3,text);
-				fflush(stdout);
 			}
 			while((row = mysql_fetch_row(result)))
 			{
-				text = malloc(strlen(row[0]) + 5);
+				text = malloc(strlen(row[0]) + 10);
 				sprintf(text,"%s,%d,",row[0],atoi(row[1]));
-				text2 = malloc(strlen(text) + strlen(text3));
-				sprintf(text2,"%s,%s",text3,text);
+				
+				text2 = malloc(strlen(text) + strlen(text3) + 5);
+				sprintf(text2,"%s%s",text3,text);
+
+				text3 = malloc(strlen(text2));
 				strcpy(text3,text2);
 			}
+			//mysql_free_result(result);
 			bufferSize = strlen(text3);
 			write(thD.fd,&bufferSize,sizeof(bufferSize));
 			write(thD.fd,text3,bufferSize);
@@ -769,14 +833,15 @@ static void* writeToClient(void* arg)
 			result = mysql_store_result(con);
 			if(result == NULL)
 				finish_with_error(con);
-			bzero(&text2,sizeof(text2));
 			text3 = malloc(3);
 			text3[0] = '>';
 			text3[1] = '\0';
 			if((row = mysql_fetch_row(result)))
 			{
+				showstr(text3);
+				free(text3);
 				text = malloc(strlen(row[0]) + 5);
-				sprintf(text,"%s,%d",row[0],atoi(row[1]));
+				sprintf(text,"%s,%d,",row[0],atoi(row[1]));
 				text3 = malloc(strlen(text));
 				strcpy(text3,text);
 				fflush(stdout);
@@ -785,10 +850,14 @@ static void* writeToClient(void* arg)
 			{
 				text = malloc(strlen(row[0]) + 5);
 				sprintf(text,"%s,%d,",row[0],atoi(row[1]));
-				text2 = malloc(strlen(text) + strlen(text3));
-				sprintf(text2,"%s,%s",text3,text);
+
+				text2 = malloc(strlen(text) + strlen(text3) + 5);
+				sprintf(text2,"%s%s",text3,text);
+
+				text3 = malloc(strlen(text2));
 				strcpy(text3,text2);
 			}
+			//mysql_free_result(result);
 			bufferSize = strlen(text3);
 			write(thD.fd,&bufferSize,sizeof(bufferSize));
 			write(thD.fd,text3,bufferSize);
@@ -801,6 +870,8 @@ static void* writeToClient(void* arg)
 			text = malloc(bufferSize+300);
 			sprintf(text,"SELECT (SELECT Name FROM users WHERE ID = message.`From`),count(ID) FROM message WHERE Seen = 0 AND `To` = (SELECT ID FROM users WHERE Name = '%s') GROUP BY `To`,`From`",buffer);
 			query(con,text);
+			showstr(text);
+			free(text);
 			result = mysql_store_result(con);
 			if(result == NULL)
 				finish_with_error(con);
@@ -811,54 +882,58 @@ static void* writeToClient(void* arg)
 			if((row = mysql_fetch_row(result)))
 			{
 				text = malloc(strlen(row[0]) + 5);
-				sprintf(text,"%s,%d",row[0],atoi(row[1]));
+				sprintf(text,"%s,%d,",row[0],atoi(row[1]));
 				text3 = malloc(strlen(text));
 				strcpy(text3,text);
-				fflush(stdout);
 			}
 			while((row = mysql_fetch_row(result)))
 			{
 				text = malloc(strlen(row[0]) + 5);
 				sprintf(text,"%s,%d,",row[0],atoi(row[1]));
 				text2 = malloc(strlen(text) + strlen(text3));
-				sprintf(text2,"%s,%s",text3,text);
+				sprintf(text2,"%s%s",text3,text);
+				text3 = malloc(strlen(text2));
 				strcpy(text3,text2);
 			}
+			//mysql_free_result(result);
 			bufferSize = strlen(text3);
 			write(thD.fd,&bufferSize,sizeof(bufferSize));
 			write(thD.fd,text3,bufferSize);
 			break;
 		case 14://show all chatrooms
-			text = malloc(350);
-			sprintf(text,"SELECT DISTINCT Name,Password FROM chatRooms");
+			text = malloc(450);
+			sprintf(text,"SELECT DISTINCT Name,Password FROM chatRooms\0");
 			query(con,text);
+			showstr(text);
+			free(text);
 			result = mysql_store_result(con);
 			if(result == NULL)
 				finish_with_error(con);
-			text3 = malloc(3);
+			text3 = malloc(15);
 			text3[0] = '>';
 			text3[1] = '\0';
 			if((row = mysql_fetch_row(result)))
 			{
-				text = malloc(strlen(row[0]) + 5);
-				sprintf(text,"%s,%s",row[0],row[1]);
+				text = malloc(strlen(row[0]) + strlen(row[1]) + 15);
+				sprintf(text,"%s,%s,",row[0],row[1]);
 				text3 = malloc(strlen(text));
 				strcpy(text3,text);
-				fflush(stdout);
 			}
 			while((row = mysql_fetch_row(result)))
 			{
 				text = malloc(strlen(row[0]) + 5);
 				sprintf(text,"%s,%s,",row[0],row[1]);
 				text2 = malloc(strlen(text) + strlen(text3));
-				sprintf(text2,"%s,%s",text3,text);
+				sprintf(text2,"%s%s",text3,text);
+				text3 = malloc(strlen(text2));
 				strcpy(text3,text2);
 			}
+			//mysql_free_result(result);
 			bufferSize = strlen(text3);
 			write(thD.fd,&bufferSize,sizeof(bufferSize));
 			write(thD.fd,text3,bufferSize);
 			break;
-		case 15:
+		case 15://create username for chatroom
 			read(thD.fd,&bufferSize,sizeof(bufferSize));
 			buffer = malloc(bufferSize);
 			read(thD.fd,buffer,bufferSize);
@@ -879,6 +954,7 @@ static void* writeToClient(void* arg)
 				thD.option = 23;
 				write(thD.fd,&thD.option,sizeof(thD.option));
 			}
+			//mysql_free_result(result);
 			break;
 		case 16://create chatroom
 			read(thD.fd,&bufferSize,sizeof(bufferSize));
@@ -965,6 +1041,7 @@ static void* writeToClient(void* arg)
 				finish_with_error(con);
 			if((row = mysql_fetch_row(result)))
 			{
+				//mysql_free_result(result);
 				buffer = malloc(250+strlen(text2)+strlen(text3));
 				sprintf(buffer,"SELECT DISTINCT 1 FROM chatRooms WHERE Name = '%s' AND Password = '%s'",text2,text3);
 				query(con,buffer);
@@ -990,6 +1067,7 @@ static void* writeToClient(void* arg)
 				thD.option = 17;
 				write(thD.fd,&thD.option,sizeof(thD.option));
 			}
+			//mysql_free_result(result);
 			break;
 		case 21://see who is in chatroom
 			read(thD.fd,&bufferSize,sizeof(bufferSize));
@@ -1016,6 +1094,7 @@ static void* writeToClient(void* arg)
 				buffer2 = malloc(strlen(buffer));
 				strcpy(buffer2,buffer);
 			} 
+			//mysql_free_result(result);
 			bufferSize = strlen(buffer2);
 			write(thD.fd,&bufferSize,sizeof(bufferSize));
 			write(thD.fd,buffer2,bufferSize);
@@ -1053,12 +1132,72 @@ static void* writeToClient(void* arg)
 				sprintf(text2,"%s,%s",text3,text);
 				strcpy(text3,text2);
 			}
+			//mysql_free_result(result);
 			bufferSize = strlen(text3);
 			write(thD.fd,&bufferSize,sizeof(bufferSize));
 			write(thD.fd,text3,bufferSize);
 			break;
+		case 23://GOD delete user
+			read(thD.fd,&bufferSize,sizeof(bufferSize));
+			buffer = malloc(bufferSize);
+			read(thD.fd,buffer,bufferSize);
+			buffer[bufferSize] = '\0';
+			text = malloc(300+bufferSize);
+			sprintf(text,"SELECT ID FROM users WHERE Name = '%s'",buffer);
+			query(con,text);
+			result = mysql_store_result(con);
+			if(result == NULL)
+				finish_with_error(con);
+			if((row = mysql_fetch_row(result)))
+			{
+				thD.option = atoi(row[0]);
+				//mysql_free_result(result);
+				text = malloc(200 + bufferSize);
+				sprintf(text,"DELETE FROM users WHERE ID = %d",thD.option);
+				query(con,text);
+				text = malloc(300+bufferSize);
+				sprintf(text,"DELETE FROM message WHERE `From` = %d OR `To` = %d",thD.option,thD.option);
+				query(con,text);
+				for(int j = 0; j <= nfds; j++)
+				{
+					if(thD.option == accounts[j].id)
+					{
+						FD_CLR(accounts[j].fd,&actfds);
+						bzero(&accounts[j],sizeof(accounts[j]));
+						close(accounts[j].fd);
+						break;
+					}
+				}
+			}
+			break;
+		case 24://GOD delete conv
+			read(thD.fd,&bufferSize,sizeof(bufferSize));
+			buffer = malloc(bufferSize);
+			read(thD.fd,buffer,bufferSize);
+			buffer[bufferSize] = '\0';
+			read(thD.fd,&bufferSize,sizeof(bufferSize));
+			buffer2 = malloc(bufferSize);
+			read(thD.fd,buffer,bufferSize);
+			buffer2[bufferSize] = '\0';
+			text = malloc(strlen(buffer)+bufferSize+400);
+			sprintf(text,"DELETE FROM message WHERE `From` = (SELECT ID FROM users WHERE Name = '%s') AND `To` = SELECT ID FROM users WHERE Name = '%s') OR `From` = (SELECT ID FROM users WHERE Name = '%s') AND `To` = (SELECT ID FROM users WHERE Name = '%s')",buffer,buffer2,buffer2,buffer);
+			query(con,text);
+			break;
 	}
 	FD_SET(thD.fd,&actfds);
+	printf("Free from writeToClient:");
+	fflush(stdout);
+	showstr(buffer);
+	free(buffer);
+	showstr(buffer2);
+	free(buffer2);
+	showstr(text);
+	free(text);
+	showstr(text2);
+	free(text2);
+	showstr(text3);
+	free(text3);
+	printf("wToServer finished\n");fflush(stdout);
 	return (NULL);
 }
 
